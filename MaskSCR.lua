@@ -1,4 +1,4 @@
--- Volleyball Legends — Ball Hitbox Expander v1.2 (Transparency Slider)
+-- Volleyball Legends — Ball Hitbox Expander v1.3 (Actually Works)
 -- ════════════════════════════════════════════════════
  
 local Players = game:GetService("Players")
@@ -10,56 +10,100 @@ local Config = {
     HitboxExpand = true,
     HitboxSize = 12,
     HitboxTransparency = 0.7,
+    Debug = true,  -- shows what the script finds
 }
  
-local ExpanderPart = nil
+local OriginalBallSize = nil
 local CurrentBall = nil
 local isDraggingSlider = false
  
--- ═══ FIND THE BALL ═══
+-- ═══ FIND THE BALL (multiple strategies) ═══
 local function FindBall()
+    -- Strategy 1: Search by name
+    local nameKeywords = {"ball", "volleyball", "gameball", "matchball", "volley"}
     for _, v in pairs(workspace:GetDescendants()) do
         if v:IsA("BasePart") then
             local name = v.Name:lower()
-            if (name == "ball" or name == "volleyball" or name == "gameball"
-                or (name:find("ball") and v.Size.Magnitude < 20 and v.Size.Magnitude > 1)) then
+            for _, kw in pairs(nameKeywords) do
+                if name == kw or name:find(kw) then
+                    if v.Size.Magnitude > 1 and v.Size.Magnitude < 30 then
+                        return v
+                    end
+                end
+            end
+        end
+    end
+ 
+    -- Strategy 2: Find sphere-shaped parts (volleyballs are spheres)
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("BasePart") and v.Shape == Enum.PartType.Ball then
+            if v.Size.Magnitude > 1 and v.Size.Magnitude < 30 then
                 return v
             end
         end
     end
+ 
+    -- Strategy 3: Find any small part that moves frequently (velocity check)
     for _, v in pairs(workspace:GetDescendants()) do
-        if v:IsA("BasePart") and v.Shape == Enum.PartType.Ball
-            and v.Size.Magnitude < 15 and v.Size.Magnitude > 1 then
-            return v
+        if v:IsA("BasePart") and v.Size.Magnitude > 1 and v.Size.Magnitude < 10 then
+            local vel = v.Velocity or Vector3.new(0, 0, 0)
+            if vel.Magnitude > 5 then  -- moving fast = likely ball
+                return v
+            end
         end
     end
+ 
+    -- Strategy 4: Check common folder names
+    local folderNames = {"Balls", "Game", "Match", "Court", "BallFolder", "Ball", 
+                         "Effects", "Assets", "ReplicatedStorage"}
+    for _, folderName in pairs(folderNames) do
+        local folder = workspace:FindFirstChild(folderName, true)
+        if folder then
+            for _, v in pairs(folder:GetDescendants()) do
+                if v:IsA("BasePart") and v.Size.Magnitude > 1 and v.Size.Magnitude < 20 then
+                    return v
+                end
+            end
+        end
+    end
+ 
     return nil
 end
  
--- ═══ CREATE HITBOX EXPANDER ═══
-local function CreateExpander(ball)
-    if ExpanderPart then ExpanderPart:Destroy() end
+-- ═══ EXPAND THE BALL DIRECTLY ═══
+local function ExpandBall(ball)
+    if not ball then return end
+    
+    -- Store original size so we can restore it
+    if not OriginalBallSize then
+        OriginalBallSize = ball.Size
+    end
+    
+    -- Directly resize the ball — this actually affects hitbox
+    local expandFactor = Config.HitboxSize / math.max(OriginalBallSize.Magnitude, 1)
+    local newSize = OriginalBallSize * expandFactor
+    
+    -- Cap it so it doesn't get insanely huge
+    newSize = Vector3.new(
+        math.clamp(newSize.X, 1, 50),
+        math.clamp(newSize.Y, 1, 50),
+        math.clamp(newSize.Z, 1, 50)
+    )
+    
+    ball.Size = newSize
+    ball.Transparency = Config.HitboxTransparency
+    ball.Material = Enum.Material.ForceField
+    ball.Color = Color3.fromRGB(0, 200, 255)
+end
  
-    local exp = Instance.new("Part")
-    exp.Name = "HitboxExpander"
-    exp.Anchored = false
-    exp.CanCollide = false
-    exp.CanTouch = true
-    exp.CanQuery = true
-    exp.Material = Enum.Material.ForceField
-    exp.Color = Color3.fromRGB(0, 200, 255)
-    exp.Transparency = Config.HitboxTransparency
-    exp.Size = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
-    exp.CastShadow = false
-    exp.Parent = workspace.CurrentCamera
- 
-    local weld = Instance.new("WeldConstraint")
-    weld.Part0 = ball
-    weld.Part1 = exp
-    weld.Parent = exp
- 
-    ExpanderPart = exp
-    return exp
+-- ═══ RESTORE BALL ═══
+local function RestoreBall(ball)
+    if ball and OriginalBallSize then
+        ball.Size = OriginalBallSize
+        ball.Transparency = 0
+        ball.Material = Enum.Material.Plastic
+        OriginalBallSize = nil
+    end
 end
  
 -- ═══ UI ═══
@@ -70,8 +114,8 @@ SG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 SG.Parent = LocalPlayer:WaitForChild("PlayerGui")
  
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 230, 0, 200)
-Main.Position = UDim2.new(0, 15, 0.5, -100)
+Main.Size = UDim2.new(0, 230, 0, 220)
+Main.Position = UDim2.new(0, 15, 0.5, -110)
 Main.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
 Main.BorderSizePixel = 0
 Main.Active = true
@@ -105,7 +149,7 @@ local layout = Instance.new("UIListLayout", Content)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Padding = UDim.new(0, 6)
  
--- ═══ TOGGLE BUTTON ═══
+-- ═══ TOGGLE ═══
 local function MakeToggle(label, default, order, callback)
     local Row = Instance.new("Frame")
     Row.Size = UDim2.new(1, 0, 0, 28)
@@ -151,7 +195,7 @@ local function MakeToggle(label, default, order, callback)
     end)
 end
  
--- ═══ SLIDER (with drag fix) ═══
+-- ═══ SLIDER ═══
 local function MakeSlider(label, min, max, default, order, callback)
     local Row = Instance.new("Frame")
     Row.Size = UDim2.new(1, 0, 0, 38)
@@ -225,44 +269,32 @@ local function MakeSlider(label, min, max, default, order, callback)
     end
  
     Track.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             isDraggingSlider = true
             UpdateSlider(input.Position.X)
         end
     end)
- 
     Knob.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             isDraggingSlider = true
         end
     end)
- 
     Knob.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = false
             isDraggingSlider = false
         end
     end)
- 
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch) then
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             UpdateSlider(input.Position.X)
         end
     end)
- 
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            if dragging then
-                dragging = false
-                isDraggingSlider = false
-            end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if dragging then dragging = false isDraggingSlider = false end
         end
     end)
  
@@ -272,18 +304,24 @@ end
 -- ═══ BUILD UI ═══
 MakeToggle("Ball Hitbox", true, 1, function(v)
     Config.HitboxExpand = v
+    if not v and CurrentBall then
+        RestoreBall(CurrentBall)
+    end
 end)
  
 MakeSlider("Hitbox Size", 3, 30, Config.HitboxSize, 2, function(v)
     Config.HitboxSize = v
 end)
  
--- NEW: Transparency slider (0 = fully visible, 1 = fully invisible)
 MakeSlider("Transparency", 0, 1, Config.HitboxTransparency, 3, function(v)
     Config.HitboxTransparency = v
-    if ExpanderPart then
-        ExpanderPart.Transparency = v
+    if CurrentBall and Config.HitboxExpand then
+        CurrentBall.Transparency = v
     end
+end)
+ 
+MakeToggle("Debug Mode", true, 4, function(v)
+    Config.Debug = v
 end)
  
 -- ═══ STATUS ═══
@@ -297,49 +335,85 @@ Status.Font = Enum.Font.Gotham
 Status.ZIndex = 11
 Status.Parent = Main
  
+-- ═══ DEBUG PANEL ═══
+local Debug = Instance.new("TextLabel")
+Debug.Size = UDim2.new(1, 0, 0, 50)
+Debug.Position = UDim2.new(0, 0, 1, -55)
+Debug.BackgroundTransparency = 1
+Debug.Text = ""
+Debug.TextColor3 = Color3.fromRGB(150, 150, 180)
+Debug.TextSize = 9
+Debug.Font = Enum.Font.Code
+Debug.TextXAlignment = Enum.TextXAlignment.Left
+Debug.TextYAlignment = Enum.TextYAlignment.Top
+Debug.TextWrapped = true
+Debug.ZIndex = 11
+Debug.Parent = Main
+ 
+-- ═══ DEBUG: LIST ALL PARTS ═══
+local function GetDebugInfo()
+    if not Config.Debug then
+        Debug.Text = ""
+        return
+    end
+    
+    local parts = {}
+    local count = 0
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("BasePart") and v.Size.Magnitude > 1 and v.Size.Magnitude < 30 then
+            count = count + 1
+            if count <= 8 then
+                table.insert(parts, string.format("%s [%s] %s",
+                    v.Name,
+                    v.Shape == Enum.PartType.Ball and "BALL" or "part",
+                    tostring(math.floor(v.Size.Magnitude))
+                ))
+            end
+        end
+    end
+    
+    Debug.Text = string.format("Parts found: %d\n%s%s",
+        count,
+        CurrentBall and ("Ball: " .. CurrentBall.Name .. " (" .. tostring(CurrentBall.Size) .. ")") or "No ball found",
+        #parts > 0 and ("\n---\n" .. table.concat(parts, "\n")) or ""
+    )
+end
+ 
 -- ═══ MAIN LOOP ═══
 RunService.Heartbeat:Connect(function()
+    -- Find ball if we don't have one
     if not CurrentBall or not CurrentBall.Parent then
         CurrentBall = FindBall()
+        OriginalBallSize = nil  -- reset so we capture new original size
+        
         if CurrentBall then
-            Status.Text = "Ball found!"
+            -- Store original size BEFORE expanding
+            OriginalBallSize = CurrentBall.Size
+            Status.Text = "Ball found: " .. CurrentBall.Name
             Status.TextColor3 = Color3.fromRGB(100, 255, 150)
         else
             Status.Text = "Searching for ball..."
             Status.TextColor3 = Color3.fromRGB(255, 220, 100)
-            return
         end
     end
  
+    -- Expand ball if enabled
     if Config.HitboxExpand and CurrentBall and CurrentBall.Parent then
-        if not ExpanderPart or not ExpanderPart.Parent then
-            CreateExpander(CurrentBall)
-        end
-        if ExpanderPart then
-            local targetSize = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
-            if ExpanderPart.Size ~= targetSize then
-                ExpanderPart.Size = targetSize
-            end
-            ExpanderPart.Transparency = Config.HitboxTransparency
-        end
-    elseif not Config.HitboxExpand and ExpanderPart then
-        ExpanderPart:Destroy()
-        ExpanderPart = nil
+        ExpandBall(CurrentBall)
+        Status.Text = "Ball: " .. CurrentBall.Name .. " | Size: " .. tostring(math.floor(CurrentBall.Size.Magnitude))
     end
  
-    if ExpanderPart and CurrentBall then
-        Status.Text = "Hitbox: " .. Config.HitboxSize .. " studs | Vis: " .. math.floor((1 - Config.HitboxTransparency) * 100) .. "%"
-    end
+    -- Update debug
+    GetDebugInfo()
 end)
  
+-- ═══ CLEANUP ON ROUND END ═══
 workspace.DescendantRemoving:Connect(function(v)
     if v == CurrentBall then
         CurrentBall = nil
-        if ExpanderPart then
-            ExpanderPart:Destroy()
-            ExpanderPart = nil
-        end
+        OriginalBallSize = nil
     end
 end)
  
-print("[Volleyball Helper] v1.2 loaded")
+print("[Volleyball Helper] v1.3 loaded — DEBUG MODE ON")
+print("[Volleyball Helper] Look at the debug panel to see what parts exist in workspace")
