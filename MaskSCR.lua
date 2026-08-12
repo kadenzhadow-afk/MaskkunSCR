@@ -1,4 +1,4 @@
--- Volleyball Legends — Ball Hitbox Expander v1.1 (Fixed Slider)
+-- Volleyball Legends — Ball Hitbox Expander v1.2 (Transparency Slider)
 -- ════════════════════════════════════════════════════
  
 local Players = game:GetService("Players")
@@ -14,7 +14,7 @@ local Config = {
  
 local ExpanderPart = nil
 local CurrentBall = nil
-local isDraggingSlider = false  -- FIX: flag to block frame drag while sliding
+local isDraggingSlider = false
  
 -- ═══ FIND THE BALL ═══
 local function FindBall()
@@ -70,8 +70,8 @@ SG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 SG.Parent = LocalPlayer:WaitForChild("PlayerGui")
  
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 230, 0, 180)
-Main.Position = UDim2.new(0, 15, 0.5, -90)
+Main.Size = UDim2.new(0, 230, 0, 200)
+Main.Position = UDim2.new(0, 15, 0.5, -100)
 Main.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
 Main.BorderSizePixel = 0
 Main.Active = true
@@ -82,11 +82,6 @@ Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
 local stroke = Instance.new("UIStroke", Main)
 stroke.Color = Color3.fromRGB(0, 180, 255)
 stroke.Thickness = 1.5
- 
--- FIX: Disable frame dragging when mouse is over the slider area
-Main.InputBegan:Connect(function(input)
-    if isDraggingSlider then return end
-end)
  
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -10, 0, 28)
@@ -156,7 +151,7 @@ local function MakeToggle(label, default, order, callback)
     end)
 end
  
--- ═══ SLIDER (FIXED — no frame drag conflict) ═══
+-- ═══ SLIDER (with drag fix) ═══
 local function MakeSlider(label, min, max, default, order, callback)
     local Row = Instance.new("Frame")
     Row.Size = UDim2.new(1, 0, 0, 38)
@@ -179,7 +174,7 @@ local function MakeSlider(label, min, max, default, order, callback)
     local Val = Instance.new("TextLabel")
     Val.Size = UDim2.new(0.45, 0, 0, 14)
     Val.BackgroundTransparency = 1
-    Val.Text = tostring(default)
+    Val.Text = string.format("%.2f", default)
     Val.TextColor3 = Color3.fromRGB(0, 200, 255)
     Val.TextSize = 11
     Val.Font = Enum.Font.GothamBold
@@ -193,8 +188,8 @@ local function MakeSlider(label, min, max, default, order, callback)
     Track.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
     Track.BorderSizePixel = 0
     Track.ZIndex = 13
+    Track.Active = true
     Track.Parent = Row
-    Track.Active = true  -- FIX: make track consume input
     Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
  
     local Fill = Instance.new("Frame")
@@ -211,8 +206,8 @@ local function MakeSlider(label, min, max, default, order, callback)
     Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     Knob.BorderSizePixel = 0
     Knob.ZIndex = 15
+    Knob.Active = true
     Knob.Parent = Track
-    Knob.Active = true  -- FIX: knob consumes input
     Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
  
     local dragging = false
@@ -222,19 +217,18 @@ local function MakeSlider(label, min, max, default, order, callback)
         local absSize = Track.AbsoluteSize.X
         local x = math.clamp((inputX - absPos) / absSize, 0, 1)
         local val = min + x * (max - min)
-        val = math.floor(val * 10) / 10
+        val = math.floor(val * 100) / 100
         Fill.Size = UDim2.new(x, 0, 1, 0)
         Knob.Position = UDim2.new(x, -8, 0.5, -8)
-        Val.Text = tostring(val)
+        Val.Text = string.format("%.2f", val)
         callback(val)
     end
  
-    -- FIX: Use Track.InputBegan so clicking the track also works
     Track.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            isDraggingSlider = true  -- FIX: tell frame to stop dragging
+            isDraggingSlider = true
             UpdateSlider(input.Position.X)
         end
     end)
@@ -243,7 +237,7 @@ local function MakeSlider(label, min, max, default, order, callback)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            isDraggingSlider = true  -- FIX: tell frame to stop dragging
+            isDraggingSlider = true
         end
     end)
  
@@ -251,7 +245,7 @@ local function MakeSlider(label, min, max, default, order, callback)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
             dragging = false
-            isDraggingSlider = false  -- FIX: re-enable frame drag
+            isDraggingSlider = false
         end
     end)
  
@@ -262,13 +256,12 @@ local function MakeSlider(label, min, max, default, order, callback)
         end
     end)
  
-    -- FIX: Global input end catches edge cases where mouse leaves the knob
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
             if dragging then
                 dragging = false
-                isDraggingSlider = false  -- FIX: always re-enable frame drag
+                isDraggingSlider = false
             end
         end
     end)
@@ -277,13 +270,20 @@ local function MakeSlider(label, min, max, default, order, callback)
 end
  
 -- ═══ BUILD UI ═══
-MakeToggle("Ball Hitbox", true, 1, function(v) Config.HitboxExpand = v end)
+MakeToggle("Ball Hitbox", true, 1, function(v)
+    Config.HitboxExpand = v
+end)
+ 
 MakeSlider("Hitbox Size", 3, 30, Config.HitboxSize, 2, function(v)
     Config.HitboxSize = v
 end)
-MakeToggle("Invisible Ball", false, 3, function(v)
-    Config.HitboxTransparency = v and 1 or 0.7
-    if ExpanderPart then ExpanderPart.Transparency = Config.HitboxTransparency end
+ 
+-- NEW: Transparency slider (0 = fully visible, 1 = fully invisible)
+MakeSlider("Transparency", 0, 1, Config.HitboxTransparency, 3, function(v)
+    Config.HitboxTransparency = v
+    if ExpanderPart then
+        ExpanderPart.Transparency = v
+    end
 end)
  
 -- ═══ STATUS ═══
@@ -328,7 +328,7 @@ RunService.Heartbeat:Connect(function()
     end
  
     if ExpanderPart and CurrentBall then
-        Status.Text = "Hitbox: " .. Config.HitboxSize .. " studs"
+        Status.Text = "Hitbox: " .. Config.HitboxSize .. " studs | Vis: " .. math.floor((1 - Config.HitboxTransparency) * 100) .. "%"
     end
 end)
  
@@ -342,4 +342,4 @@ workspace.DescendantRemoving:Connect(function(v)
     end
 end)
  
-print("[Volleyball Helper] v1.1 loaded — slider fix applied")
+print("[Volleyball Helper] v1.2 loaded")
