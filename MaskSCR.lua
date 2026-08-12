@@ -1,4 +1,4 @@
--- AimAssist + ESP v1.2 — Fixed team check & ESP
+-- AimAssist + ESP v1.3 — Arsenal compatible
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -16,15 +16,16 @@ local Config = {
 }
  
 local CurrentTarget = nil
-local ESPObjects = {}
+local ESPCache = {}
  
--- ═══ TEAM CHECK ═══
+-- ═══ TEAM CHECK (Arsenal = FFA, everyone is enemy) ═══
 local function IsEnemy(player)
-    -- If no team system, everyone is an enemy
-    if not LocalPlayer.Team or not player.Team then
-        return player ~= LocalPlayer
-    end
-    -- Different teams = enemy
+    if player == LocalPlayer then return false end
+    if not player.Character then return false end
+    local hum = player.Character:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    -- Arsenal is FFA — everyone else is enemy
+    if not LocalPlayer.Team or not player.Team then return true end
     return player.Team ~= LocalPlayer.Team
 end
  
@@ -32,15 +33,17 @@ end
 local SG = Instance.new("ScreenGui")
 SG.Name = "UI"
 SG.ResetOnSpawn = false
+SG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 SG.Parent = LocalPlayer:WaitForChild("PlayerGui")
  
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 220, 0, 290)
-Main.Position = UDim2.new(0, 15, 0.5, -145)
+Main.Size = UDim2.new(0, 220, 0, 280)
+Main.Position = UDim2.new(0, 15, 0.5, -140)
 Main.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 Main.BorderSizePixel = 0
 Main.Active = true
 Main.Draggable = true
+Main.ZIndex = 10
 Main.Parent = SG
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
 local stroke = Instance.new("UIStroke", Main)
@@ -56,12 +59,14 @@ Title.TextColor3 = Color3.fromRGB(220, 220, 240)
 Title.TextSize = 14
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.ZIndex = 11
 Title.Parent = Main
  
 local Content = Instance.new("Frame")
 Content.Size = UDim2.new(1, -20, 1, -70)
 Content.Position = UDim2.new(0, 10, 0, 35)
 Content.BackgroundTransparency = 1
+Content.ZIndex = 11
 Content.Parent = Main
 local layout = Instance.new("UIListLayout", Content)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -72,6 +77,7 @@ local function MakeSlider(name, label, min, max, default, order)
     Row.Size = UDim2.new(1, 0, 0, 38)
     Row.BackgroundTransparency = 1
     Row.LayoutOrder = order
+    Row.ZIndex = 12
     Row.Parent = Content
  
     local Lbl = Instance.new("TextLabel")
@@ -82,6 +88,7 @@ local function MakeSlider(name, label, min, max, default, order)
     Lbl.TextSize = 11
     Lbl.Font = Enum.Font.Gotham
     Lbl.TextXAlignment = Enum.TextXAlignment.Left
+    Lbl.ZIndex = 13
     Lbl.Parent = Row
  
     local Val = Instance.new("TextLabel")
@@ -92,6 +99,7 @@ local function MakeSlider(name, label, min, max, default, order)
     Val.TextSize = 11
     Val.Font = Enum.Font.GothamBold
     Val.TextXAlignment = Enum.TextXAlignment.Right
+    Val.ZIndex = 13
     Val.Parent = Row
  
     local Track = Instance.new("Frame")
@@ -99,6 +107,7 @@ local function MakeSlider(name, label, min, max, default, order)
     Track.Position = UDim2.new(0, 0, 0, 20)
     Track.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
     Track.BorderSizePixel = 0
+    Track.ZIndex = 13
     Track.Parent = Row
     Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
  
@@ -106,6 +115,7 @@ local function MakeSlider(name, label, min, max, default, order)
     Fill.Size = UDim2.new((default-min)/(max-min), 0, 1, 0)
     Fill.BackgroundColor3 = Color3.fromRGB(100, 160, 255)
     Fill.BorderSizePixel = 0
+    Fill.ZIndex = 14
     Fill.Parent = Track
     Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
  
@@ -114,7 +124,7 @@ local function MakeSlider(name, label, min, max, default, order)
     Knob.Position = UDim2.new((default-min)/(max-min), -6, 0.5, -6)
     Knob.BackgroundColor3 = Color3.fromRGB(180, 210, 255)
     Knob.BorderSizePixel = 0
-    Knob.ZIndex = 2
+    Knob.ZIndex = 15
     Knob.Parent = Track
     Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
  
@@ -164,6 +174,7 @@ local function MakeToggle(label, configKey, order)
     Btn.TextSize = 12
     Btn.Font = Enum.Font.GothamBold
     Btn.LayoutOrder = order
+    Btn.ZIndex = 12
     Btn.Parent = Content
     Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 6)
  
@@ -186,6 +197,7 @@ Status.Text = "OFF"
 Status.TextColor3 = Color3.fromRGB(140, 140, 160)
 Status.TextSize = 11
 Status.Font = Enum.Font.Gotham
+Status.ZIndex = 11
 Status.Parent = Main
  
 -- FOV Circle
@@ -199,94 +211,68 @@ if ok and Circle then
     Circle.NumSides = 64
 end
  
--- ═══ ESP ═══
+-- ═══ ESP (ScreenGui approach — works everywhere) ═══
 local function CreateESP(player)
-    if ESPObjects[player] then return end
+    if ESPCache[player] then return end
  
-    -- Use BillboardGui instead of Drawing for better compatibility
-    local head = player.Character and player.Character:FindFirstChild("Head")
-    if not head then return end
+    local espFrame = Instance.new("Frame")
+    espFrame.Name = "ESP_" .. player.Name
+    espFrame.Size = UDim2.new(0, 80, 0, 40)
+    espFrame.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    espFrame.BackgroundTransparency = 0.7
+    espFrame.BorderSizePixel = 0
+    espFrame.AnchorPoint = Vector2.new(0.5, 1)
+    espFrame.Visible = false
+    espFrame.ZIndex = 5
+    espFrame.Parent = SG
+    Instance.new("UICorner", espFrame).CornerRadius = UDim.new(0, 4)
+    local boxStroke = Instance.new("UIStroke", espFrame)
+    boxStroke.Color = Color3.fromRGB(255, 50, 50)
+    boxStroke.Thickness = 2
  
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "ESP_Billboard"
-    billboard.Size = UDim2.new(0, 120, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, 3, 0)
-    billboard.AlwaysOnTop = true
-    billboard.LightInfluence = 0
-    billboard.Adornee = head
-    billboard.Parent = head
- 
-    -- Name label
     local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(1, 0, 0, 18)
+    nameLabel.Size = UDim2.new(1, 0, 0, 16)
     nameLabel.Position = UDim2.new(0, 0, 0, 0)
     nameLabel.BackgroundTransparency = 1
     nameLabel.Text = player.Name
-    nameLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-    nameLabel.TextSize = 14
+    nameLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+    nameLabel.TextSize = 12
     nameLabel.Font = Enum.Font.GothamBold
     nameLabel.TextStrokeTransparency = 0
-    nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    nameLabel.Parent = billboard
+    nameLabel.ZIndex = 6
+    nameLabel.Parent = espFrame
  
-    -- Distance label
     local distLabel = Instance.new("TextLabel")
-    distLabel.Name = "Dist"
     distLabel.Size = UDim2.new(1, 0, 0, 14)
-    distLabel.Position = UDim2.new(0, 0, 0, 18)
+    distLabel.Position = UDim2.new(0, 0, 0, 16)
     distLabel.BackgroundTransparency = 1
     distLabel.Text = "0m"
     distLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    distLabel.TextSize = 12
+    distLabel.TextSize = 10
     distLabel.Font = Enum.Font.Gotham
     distLabel.TextStrokeTransparency = 0
-    distLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    distLabel.Parent = billboard
+    distLabel.ZIndex = 6
+    distLabel.Parent = espFrame
  
-    -- Box frame around character
-    local boxFrame = Instance.new("Frame")
-    boxFrame.Name = "ESP_Box"
-    boxFrame.Size = UDim2.new(0, 60, 0, 80)
-    boxFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    boxFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-    boxFrame.BackgroundTransparency = 1
-    boxFrame.BorderSizePixel = 0
-    boxFrame.Parent = billboard
-    Instance.new("UICorner", boxFrame).CornerRadius = UDim.new(0, 4)
-    local boxStroke = Instance.new("UIStroke", boxFrame)
-    boxStroke.Color = Color3.fromRGB(255, 50, 50)
-    boxStroke.Thickness = 2
-    boxStroke.Transparency = 0.3
- 
-    ESPObjects[player] = {Billboard = billboard, Name = nameLabel, Dist = distLabel, Box = boxFrame, BoxStroke = boxStroke}
+    ESPCache[player] = {Frame = espFrame, Name = nameLabel, Dist = distLabel, Stroke = boxStroke}
 end
  
 local function RemoveESP(player)
-    if ESPObjects[player] then
-        ESPObjects[player].Billboard:Destroy()
-        ESPObjects[player] = nil
+    if ESPCache[player] then
+        ESPCache[player].Frame:Destroy()
+        ESPCache[player] = nil
     end
 end
  
--- Clean ESP on death
 local function SetupPlayer(player)
     if player == LocalPlayer then return end
- 
     local function OnCharacter(char)
         RemoveESP(player)
         local hum = char:WaitForChild("Humanoid", 5)
-        if hum then
-            hum.Died:Connect(function()
-                RemoveESP(player)
-            end)
-        end
+        if hum then hum.Died:Connect(function() RemoveESP(player) end) end
     end
- 
     if player.Character then OnCharacter(player.Character) end
     player.CharacterAdded:Connect(OnCharacter)
-    player.AncestryChanged:Connect(function(_, parent)
-        if not parent then RemoveESP(player) end
-    end)
 end
  
 for _, p in ipairs(Players:GetPlayers()) do SetupPlayer(p) end
@@ -299,8 +285,7 @@ local function GetClosest()
     local best, bestDist = nil, Config.FOVRadius
  
     for _, p in ipairs(Players:GetPlayers()) do
-        if p == LocalPlayer then continue end
-        if not IsEnemy(p) then continue end  -- TEAM CHECK
+        if not IsEnemy(p) then continue end
         if not p.Character then continue end
         local hum = p.Character:FindFirstChildOfClass("Humanoid")
         local root = p.Character:FindFirstChild("HumanoidRootPart")
@@ -341,7 +326,6 @@ end
  
 -- ═══ MAIN LOOP ═══
 RunService.Heartbeat:Connect(function()
-    -- FOV Circle
     if ok and Circle then
         Circle.Visible = Config.Enabled
         Circle.Radius = Config.FOVRadius
@@ -363,13 +347,14 @@ RunService.Heartbeat:Connect(function()
                 Status.TextColor3 = Color3.fromRGB(100, 255, 150)
             else
                 CurrentTarget = nil
-                Status.Text = "SCANNING..."
-                Status.TextColor3 = Color3.fromRGB(255, 220, 100)
             end
         else
             CurrentTarget = nil
-            Status.Text = Config.Enabled and "SCANNING..." or "OFF"
-            Status.TextColor3 = Config.Enabled and Color3.fromRGB(255, 220, 100) or Color3.fromRGB(140, 140, 160)
+        end
+ 
+        if not CurrentTarget then
+            Status.Text = "SCANNING..."
+            Status.TextColor3 = Color3.fromRGB(255, 220, 100)
         end
     else
         CurrentTarget = nil
@@ -379,37 +364,39 @@ RunService.Heartbeat:Connect(function()
  
     -- ESP Update
     for _, p in ipairs(Players:GetPlayers()) do
-        if p == LocalPlayer then continue end
- 
         if Config.ESP and IsEnemy(p) and p.Character then
-            local hum = p.Character:FindFirstChildOfClass("Humanoid")
             local root = p.Character:FindFirstChild("HumanoidRootPart")
             local head = p.Character:FindFirstChild("Head")
  
-            if hum and root and head and hum.Health > 0 then
+            if root and head then
                 local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if myRoot then
                     local dist = (root.Position - myRoot.Position).Magnitude
                     if dist <= Config.MaxDistance and IsVisible(head) then
                         CreateESP(p)
-                        local obj = ESPObjects[p]
+                        local obj = ESPCache[p]
                         if obj then
-                            obj.Dist.Text = math.floor(dist) .. "m"
-                            -- Color based on distance
-                            if dist < 50 then
-                                obj.BoxStroke.Color = Color3.fromRGB(255, 50, 50)  -- red = close
-                            elseif dist < 150 then
-                                obj.BoxStroke.Color = Color3.fromRGB(255, 165, 0)  -- orange = mid
+                            local sp, onScr = Camera:WorldToViewportPoint(root.Position)
+                            if onScr then
+                                obj.Frame.Position = UDim2.new(0, sp.X, 0, sp.Y - 50)
+                                obj.Frame.Visible = true
+                                obj.Dist.Text = math.floor(dist) .. "m"
+                                obj.Name.Text = p.Name
+                                if dist < 50 then
+                                    obj.Stroke.Color = Color3.fromRGB(255, 50, 50)
+                                elseif dist < 150 then
+                                    obj.Stroke.Color = Color3.fromRGB(255, 165, 0)
+                                else
+                                    obj.Stroke.Color = Color3.fromRGB(255, 255, 0)
+                                end
                             else
-                                obj.BoxStroke.Color = Color3.fromRGB(255, 255, 0)  -- yellow = far
+                                obj.Frame.Visible = false
                             end
                         end
                     else
                         RemoveESP(p)
                     end
                 end
-            else
-                RemoveESP(p)
             end
         else
             RemoveESP(p)
@@ -417,4 +404,4 @@ RunService.Heartbeat:Connect(function()
     end
 end)
  
-print("[Maskkun] Loaded v1.2")
+print("[Maskkun] v1.3 loaded")
