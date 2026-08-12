@@ -1,45 +1,114 @@
--- AimAssist + ESP v1.3 — Arsenal compatible
+-- Volleyball Legends — Ball Hitbox Expander + Utility
+-- Paste this in your executor
+-- ════════════════════════════════════════════════════
+ 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
  
+-- ═══ CONFIG ═══
 local Config = {
-    Enabled = false,
-    FOVRadius = 150,
-    Smoothness = 1.0,
-    MaxDistance = 300,
-    WallCheck = true,
-    TargetPart = "Head",
-    ESP = true,
+    HitboxExpand = true,
+    HitboxSize = 12,        -- how big the hitbox is (default ball is ~2-3)
+    HitboxTransparency = 0.7, -- 0 = visible, 1 = invisible
+    AutoCollect = false,     -- auto-collect stray balls
 }
  
-local CurrentTarget = nil
-local ESPCache = {}
+local ExpanderPart = nil
+local Tracking = false
  
--- ═══ TEAM CHECK (Arsenal = FFA, everyone is enemy) ═══
-local function IsEnemy(player)
-    if player == LocalPlayer then return false end
-    if not player.Character then return false end
-    local hum = player.Character:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return false end
-    -- Arsenal is FFA — everyone else is enemy
-    if not LocalPlayer.Team or not player.Team then return true end
-    return player.Team ~= LocalPlayer.Team
+-- ═══ FIND THE BALL ═══
+local function FindBall()
+    -- Check common ball locations in Roblox volleyball games
+    local workspace = workspace
+    
+    -- Method 1: Find by name patterns
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("BasePart") then
+            local name = v.Name:lower()
+            if name == "ball" or name == "volleyball" or name == "gameball" 
+                or name:find("ball") and v.Size.Magnitude < 20 
+                and v.Size.Magnitude > 1 then
+                return v
+            end
+        end
+    end
+    
+    -- Method 2: Find a small sphere in workspace (volleyball is usually a sphere)
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("BasePart") and v.Shape == Enum.PartType.Ball 
+            and v.Size.Magnitude < 15 and v.Size.Magnitude > 1 then
+            return v
+        end
+    end
+    
+    -- Method 3: Find parts inside common containers
+    local containers = {"Balls", "Game", "Match", "Court", "BallFolder"}
+    for _, name in pairs(containers) do
+        local folder = workspace:FindFirstChild(name, true)
+        if folder then
+            for _, v in pairs(folder:GetDescendants()) do
+                if v:IsA("BasePart") and v.Size.Magnitude < 15 and v.Size.Magnitude > 1 then
+                    return v
+                end
+            end
+        end
+    end
+    
+    return nil
+end
+ 
+-- ═══ CREATE HITBOX EXPANDER ═══
+local function CreateExpander(ball)
+    if ExpanderPart then
+        ExpanderPart:Destroy()
+    end
+    
+    local exp = Instance.new("Part")
+    exp.Name = "HitboxExpander"
+    exp.Anchored = false
+    exp.CanCollide = false
+    exp.CanTouch = true
+    exp.CanQuery = true
+    exp.Material = Enum.Material.ForceField
+    exp.Color = Color3.fromRGB(0, 200, 255)
+    exp.Transparency = Config.HitboxTransparency
+    exp.Size = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
+    exp.CastShadow = false
+    exp.Parent = workspace.CurrentCamera
+    
+    -- Weld to ball so it follows
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = ball
+    weld.Part1 = exp
+    weld.Parent = exp
+    
+    -- Make it detect touches
+    exp.Touched:Connect(function(hit)
+        -- Expand the ball's touch detection
+        local hum = hit.Parent:FindFirstChildOfClass("Humanoid")
+        if hum and hit.Parent ~= LocalPlayer.Character then
+            -- Register touch with the ball
+            ball.Touched:FireServer(hit, ball.Position)
+        end
+    end)
+    
+    ExpanderPart = exp
+    return exp
 end
  
 -- ═══ UI ═══
 local SG = Instance.new("ScreenGui")
-SG.Name = "UI"
+SG.Name = "VBHelper"
 SG.ResetOnSpawn = false
 SG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 SG.Parent = LocalPlayer:WaitForChild("PlayerGui")
  
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 220, 0, 280)
-Main.Position = UDim2.new(0, 15, 0.5, -140)
-Main.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+Main.Size = UDim2.new(0, 230, 0, 200)
+Main.Position = UDim2.new(0, 15, 0.5, -100)
+Main.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
 Main.BorderSizePixel = 0
 Main.Active = true
 Main.Draggable = true
@@ -47,32 +116,87 @@ Main.ZIndex = 10
 Main.Parent = SG
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
 local stroke = Instance.new("UIStroke", Main)
-stroke.Color = Color3.fromRGB(80, 80, 120)
+stroke.Color = Color3.fromRGB(0, 180, 255)
 stroke.Thickness = 1.5
  
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, -10, 0, 30)
-Title.Position = UDim2.new(0, 10, 0, 0)
+Title.Size = UDim2.new(1, -10, 0, 28)
+Title.Position = UDim2.new(0, 10, 0, 2)
 Title.BackgroundTransparency = 1
-Title.Text = "Maskkun"
-Title.TextColor3 = Color3.fromRGB(220, 220, 240)
-Title.TextSize = 14
+Title.Text = "🏐 Volleyball Helper"
+Title.TextColor3 = Color3.fromRGB(220, 240, 255)
+Title.TextSize = 13
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.ZIndex = 11
 Title.Parent = Main
  
 local Content = Instance.new("Frame")
-Content.Size = UDim2.new(1, -20, 1, -70)
-Content.Position = UDim2.new(0, 10, 0, 35)
+Content.Size = UDim2.new(1, -16, 1, -40)
+Content.Position = UDim2.new(0, 8, 0, 34)
 Content.BackgroundTransparency = 1
 Content.ZIndex = 11
 Content.Parent = Main
 local layout = Instance.new("UIListLayout", Content)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Padding = UDim.new(0, 8)
+layout.Padding = UDim.new(0, 6)
  
-local function MakeSlider(name, label, min, max, default, order)
+-- ═══ TOGGLE BUTTON HELPER ═══
+local function MakeToggle(label, default, order, callback)
+    local Row = Instance.new("Frame")
+    Row.Size = UDim2.new(1, 0, 0, 30)
+    Row.BackgroundTransparency = 1
+    Row.LayoutOrder = order
+    Row.ZIndex = 12
+    Row.Parent = Content
+ 
+    local Lbl = Instance.new("TextLabel")
+    Lbl.Size = UDim2.new(0.6, 0, 1, 0)
+    Lbl.BackgroundTransparency = 1
+    Lbl.Text = label
+    Lbl.TextColor3 = Color3.fromRGB(180, 180, 200)
+    Lbl.TextSize = 11
+    Lbl.Font = Enum.Font.Gotham
+    Lbl.TextXAlignment = Enum.TextXAlignment.Left
+    Lbl.ZIndex = 13
+    Lbl.Parent = Row
+ 
+    local Btn = Instance.new("TextButton")
+    Btn.Size = UDim2.new(0, 50, 0, 22)
+    Btn.Position = UDim2.new(1, -55, 0.5, -11)
+    Btn.BorderSizePixel = 0
+    Btn.Text = default and "ON" or "OFF"
+    Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Btn.TextSize = 10
+    Btn.Font = Enum.Font.GothamBold
+    Btn.ZIndex = 13
+    Btn.Parent = Row
+    
+    local btnCorner = Instance.new("UICorner", Btn)
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    
+    local state = default
+    local function UpdateVisual()
+        if state then
+            Btn.BackgroundColor3 = Color3.fromRGB(50, 200, 100)
+        else
+            Btn.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+        end
+    end
+    UpdateVisual()
+    
+    Btn.MouseButton1Click:Connect(function()
+        state = not state
+        UpdateVisual()
+        Btn.Text = state and "ON" or "OFF"
+        callback(state)
+    end)
+    
+    return function() return state end
+end
+ 
+-- ═══ SLIDER HELPER ═══
+local function MakeSlider(label, min, max, default, order, callback)
     local Row = Instance.new("Frame")
     Row.Size = UDim2.new(1, 0, 0, 38)
     Row.BackgroundTransparency = 1
@@ -81,7 +205,7 @@ local function MakeSlider(name, label, min, max, default, order)
     Row.Parent = Content
  
     local Lbl = Instance.new("TextLabel")
-    Lbl.Size = UDim2.new(0.55, 0, 0, 14)
+    Lbl.Size = UDim2.new(0.6, 0, 0, 14)
     Lbl.BackgroundTransparency = 1
     Lbl.Text = label
     Lbl.TextColor3 = Color3.fromRGB(180, 180, 200)
@@ -92,10 +216,10 @@ local function MakeSlider(name, label, min, max, default, order)
     Lbl.Parent = Row
  
     local Val = Instance.new("TextLabel")
-    Val.Size = UDim2.new(0.45, 0, 0, 14)
+    Val.Size = UDim2.new(0.4, 0, 0, 14)
     Val.BackgroundTransparency = 1
-    Val.Text = string.format("%.2f", default)
-    Val.TextColor3 = Color3.fromRGB(130, 200, 255)
+    Val.Text = tostring(default)
+    Val.TextColor3 = Color3.fromRGB(0, 200, 255)
     Val.TextSize = 11
     Val.Font = Enum.Font.GothamBold
     Val.TextXAlignment = Enum.TextXAlignment.Right
@@ -104,7 +228,7 @@ local function MakeSlider(name, label, min, max, default, order)
  
     local Track = Instance.new("Frame")
     Track.Size = UDim2.new(1, 0, 0, 5)
-    Track.Position = UDim2.new(0, 0, 0, 20)
+    Track.Position = UDim2.new(0, 0, 0, 22)
     Track.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
     Track.BorderSizePixel = 0
     Track.ZIndex = 13
@@ -112,296 +236,121 @@ local function MakeSlider(name, label, min, max, default, order)
     Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
  
     local Fill = Instance.new("Frame")
-    Fill.Size = UDim2.new((default-min)/(max-min), 0, 1, 0)
-    Fill.BackgroundColor3 = Color3.fromRGB(100, 160, 255)
+    Fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    Fill.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
     Fill.BorderSizePixel = 0
     Fill.ZIndex = 14
     Fill.Parent = Track
     Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
  
     local Knob = Instance.new("Frame")
-    Knob.Size = UDim2.new(0, 12, 0, 12)
-    Knob.Position = UDim2.new((default-min)/(max-min), -6, 0.5, -6)
-    Knob.BackgroundColor3 = Color3.fromRGB(180, 210, 255)
+    Knob.Size = UDim2.new(0, 14, 0, 14)
+    Knob.Position = UDim2.new((default - min) / (max - min), -7, 0.5, -7)
+    Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     Knob.BorderSizePixel = 0
     Knob.ZIndex = 15
     Knob.Parent = Track
     Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
  
     local dragging = false
-    local function Update(x)
-        local r = math.clamp((x - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
-        local v = min + r * (max - min)
-        Fill.Size = UDim2.new(r, 0, 1, 0)
-        Knob.Position = UDim2.new(r, -6, 0.5, -6)
-        Val.Text = string.format("%.2f", v)
-        return v
-    end
- 
-    Track.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then
+    Knob.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            local v = Update(i.Position.X)
-            if name == "FOV" then Config.FOVRadius = v
-            elseif name == "Smooth" then Config.Smoothness = v end
         end
     end)
-    Knob.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end
-    end)
-    UserInputService.InputChanged:Connect(function(i)
-        if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
-            local v = Update(i.Position.X)
-            if name == "FOV" then Config.FOVRadius = v
-            elseif name == "Smooth" then Config.Smoothness = v end
+    Knob.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
         end
     end)
-    UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local absPos = Track.AbsolutePosition.X
+            local absSize = Track.AbsoluteSize.X
+            local x = math.clamp((input.Position.X - absPos) / absSize, 0, 1)
+            local val = min + x * (max - min)
+            val = math.floor(val * 10) / 10
+            
+            Fill.Size = UDim2.new(x, 0, 1, 0)
+            Knob.Position = UDim2.new(x, -7, 0.5, -7)
+            Val.Text = tostring(val)
+            callback(val)
+        end
     end)
+    
+    callback(default)
 end
  
-MakeSlider("FOV", "FOV Radius", 50, 400, Config.FOVRadius, 1)
-MakeSlider("Smooth", "Smoothness", 0.01, 1.0, Config.Smoothness, 2)
+-- ═══ BUILD UI ═══
+MakeToggle("Ball Hitbox", true, 1, function(v) Config.HitboxExpand = v end)
+MakeSlider("Hitbox Size", 3, 30, Config.HitboxSize, 2, function(v) Config.HitboxSize = v end)
+MakeToggle("Invisible Ball", false, 3, function(v) 
+    Config.HitboxTransparency = v and 1 or 0.7
+    if ExpanderPart then ExpanderPart.Transparency = Config.HitboxTransparency end
+end)
  
-local function MakeToggle(label, configKey, order)
-    local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(1, 0, 0, 30)
-    Btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(40, 140, 80) or Color3.fromRGB(60, 60, 80)
-    Btn.BorderSizePixel = 0
-    Btn.Text = (Config[configKey] and "ON" or "OFF") .. "  " .. label
-    Btn.TextColor3 = Color3.fromRGB(200, 200, 220)
-    Btn.TextSize = 12
-    Btn.Font = Enum.Font.GothamBold
-    Btn.LayoutOrder = order
-    Btn.ZIndex = 12
-    Btn.Parent = Content
-    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 6)
- 
-    Btn.MouseButton1Click:Connect(function()
-        Config[configKey] = not Config[configKey]
-        Btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(40, 140, 80) or Color3.fromRGB(60, 60, 80)
-        Btn.Text = (Config[configKey] and "ON" or "OFF") .. "  " .. label
-    end)
-end
- 
-MakeToggle("Aim Assist", "Enabled", 3)
-MakeToggle("ESP", "ESP", 4)
-MakeToggle("Wall Check", "WallCheck", 5)
- 
+-- ═══ STATUS ═══
 local Status = Instance.new("TextLabel")
-Status.Size = UDim2.new(1, 0, 0, 20)
-Status.Position = UDim2.new(0, 0, 1, -25)
+Status.Size = UDim2.new(1, 0, 0, 16)
 Status.BackgroundTransparency = 1
-Status.Text = "OFF"
-Status.TextColor3 = Color3.fromRGB(140, 140, 160)
-Status.TextSize = 11
+Status.Text = "Searching for ball..."
+Status.TextColor3 = Color3.fromRGB(255, 220, 100)
+Status.TextSize = 10
 Status.Font = Enum.Font.Gotham
 Status.ZIndex = 11
 Status.Parent = Main
  
--- FOV Circle
-local ok, Circle = pcall(function() return Drawing.new("Circle") end)
-if ok and Circle then
-    Circle.Visible = false
-    Circle.Thickness = 1.5
-    Circle.Color = Color3.fromRGB(100, 180, 255)
-    Circle.Transparency = 0.6
-    Circle.Filled = false
-    Circle.NumSides = 64
-end
- 
--- ═══ ESP (ScreenGui approach — works everywhere) ═══
-local function CreateESP(player)
-    if ESPCache[player] then return end
- 
-    local espFrame = Instance.new("Frame")
-    espFrame.Name = "ESP_" .. player.Name
-    espFrame.Size = UDim2.new(0, 80, 0, 40)
-    espFrame.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-    espFrame.BackgroundTransparency = 0.7
-    espFrame.BorderSizePixel = 0
-    espFrame.AnchorPoint = Vector2.new(0.5, 1)
-    espFrame.Visible = false
-    espFrame.ZIndex = 5
-    espFrame.Parent = SG
-    Instance.new("UICorner", espFrame).CornerRadius = UDim.new(0, 4)
-    local boxStroke = Instance.new("UIStroke", espFrame)
-    boxStroke.Color = Color3.fromRGB(255, 50, 50)
-    boxStroke.Thickness = 2
- 
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(1, 0, 0, 16)
-    nameLabel.Position = UDim2.new(0, 0, 0, 0)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.Text = player.Name
-    nameLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-    nameLabel.TextSize = 12
-    nameLabel.Font = Enum.Font.GothamBold
-    nameLabel.TextStrokeTransparency = 0
-    nameLabel.ZIndex = 6
-    nameLabel.Parent = espFrame
- 
-    local distLabel = Instance.new("TextLabel")
-    distLabel.Size = UDim2.new(1, 0, 0, 14)
-    distLabel.Position = UDim2.new(0, 0, 0, 16)
-    distLabel.BackgroundTransparency = 1
-    distLabel.Text = "0m"
-    distLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    distLabel.TextSize = 10
-    distLabel.Font = Enum.Font.Gotham
-    distLabel.TextStrokeTransparency = 0
-    distLabel.ZIndex = 6
-    distLabel.Parent = espFrame
- 
-    ESPCache[player] = {Frame = espFrame, Name = nameLabel, Dist = distLabel, Stroke = boxStroke}
-end
- 
-local function RemoveESP(player)
-    if ESPCache[player] then
-        ESPCache[player].Frame:Destroy()
-        ESPCache[player] = nil
-    end
-end
- 
-local function SetupPlayer(player)
-    if player == LocalPlayer then return end
-    local function OnCharacter(char)
-        RemoveESP(player)
-        local hum = char:WaitForChild("Humanoid", 5)
-        if hum then hum.Died:Connect(function() RemoveESP(player) end) end
-    end
-    if player.Character then OnCharacter(player.Character) end
-    player.CharacterAdded:Connect(OnCharacter)
-end
- 
-for _, p in ipairs(Players:GetPlayers()) do SetupPlayer(p) end
-Players.PlayerAdded:Connect(SetupPlayer)
-Players.PlayerRemoving:Connect(RemoveESP)
- 
--- ═══ CORE ═══
-local function GetClosest()
-    local sc = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-    local best, bestDist = nil, Config.FOVRadius
- 
-    for _, p in ipairs(Players:GetPlayers()) do
-        if not IsEnemy(p) then continue end
-        if not p.Character then continue end
-        local hum = p.Character:FindFirstChildOfClass("Humanoid")
-        local root = p.Character:FindFirstChild("HumanoidRootPart")
-        local part = p.Character:FindFirstChild(Config.TargetPart)
-        if not hum or not root or not part or hum.Health <= 0 then continue end
- 
-        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if not myRoot then continue end
-        if (root.Position - myRoot.Position).Magnitude > Config.MaxDistance then continue end
- 
-        local sp, onScr = Camera:WorldToViewportPoint(part.Position)
-        if not onScr then continue end
- 
-        local sd = (Vector2.new(sp.X, sp.Y) - sc).Magnitude
-        if sd <= Config.FOVRadius and sd < bestDist then
-            if Config.WallCheck then
-                local rp = RaycastParams.new()
-                rp.FilterDescendantsInstances = {LocalPlayer.Character, p.Character}
-                rp.FilterType = Enum.RaycastFilterType.Exclude
-                if workspace:Raycast(Camera.CFrame.Position, part.Position - Camera.CFrame.Position, rp) then
-                    continue
-                end
-            end
-            bestDist = sd
-            best = p
-        end
-    end
-    return best
-end
- 
-local function IsVisible(targetPart)
-    local rp = RaycastParams.new()
-    rp.FilterDescendantsInstances = {LocalPlayer.Character}
-    rp.FilterType = Enum.RaycastFilterType.Exclude
-    local result = workspace:Raycast(Camera.CFrame.Position, targetPart.Position - Camera.CFrame.Position, rp)
-    return result == nil
-end
- 
 -- ═══ MAIN LOOP ═══
+local CurrentBall = nil
+ 
 RunService.Heartbeat:Connect(function()
-    if ok and Circle then
-        Circle.Visible = Config.Enabled
-        Circle.Radius = Config.FOVRadius
-        Circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-    end
- 
-    -- Aim Assist
-    if Config.Enabled then
-        CurrentTarget = GetClosest()
-        if CurrentTarget and CurrentTarget.Character then
-            local hum = CurrentTarget.Character:FindFirstChildOfClass("Humanoid")
-            local part = CurrentTarget.Character:FindFirstChild(Config.TargetPart)
-            if hum and hum.Health > 0 and part then
-                Camera.CFrame = Camera.CFrame:Lerp(
-                    CFrame.new(Camera.CFrame.Position, part.Position),
-                    Config.Smoothness
-                )
-                Status.Text = "LOCKED > " .. CurrentTarget.Name
-                Status.TextColor3 = Color3.fromRGB(100, 255, 150)
-            else
-                CurrentTarget = nil
-            end
+    -- Find ball if we don't have one
+    if not CurrentBall or not CurrentBall.Parent then
+        CurrentBall = FindBall()
+        if CurrentBall then
+            Status.Text = "Ball found! Size: " .. tostring(CurrentBall.Size)
+            Status.TextColor3 = Color3.fromRGB(100, 255, 150)
         else
-            CurrentTarget = nil
-        end
- 
-        if not CurrentTarget then
-            Status.Text = "SCANNING..."
+            Status.Text = "Searching for ball..."
             Status.TextColor3 = Color3.fromRGB(255, 220, 100)
+            return
         end
-    else
-        CurrentTarget = nil
-        Status.Text = "OFF"
-        Status.TextColor3 = Color3.fromRGB(140, 140, 160)
     end
- 
-    -- ESP Update
-    for _, p in ipairs(Players:GetPlayers()) do
-        if Config.ESP and IsEnemy(p) and p.Character then
-            local root = p.Character:FindFirstChild("HumanoidRootPart")
-            local head = p.Character:FindFirstChild("Head")
- 
-            if root and head then
-                local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if myRoot then
-                    local dist = (root.Position - myRoot.Position).Magnitude
-                    if dist <= Config.MaxDistance and IsVisible(head) then
-                        CreateESP(p)
-                        local obj = ESPCache[p]
-                        if obj then
-                            local sp, onScr = Camera:WorldToViewportPoint(root.Position)
-                            if onScr then
-                                obj.Frame.Position = UDim2.new(0, sp.X, 0, sp.Y - 50)
-                                obj.Frame.Visible = true
-                                obj.Dist.Text = math.floor(dist) .. "m"
-                                obj.Name.Text = p.Name
-                                if dist < 50 then
-                                    obj.Stroke.Color = Color3.fromRGB(255, 50, 50)
-                                elseif dist < 150 then
-                                    obj.Stroke.Color = Color3.fromRGB(255, 165, 0)
-                                else
-                                    obj.Stroke.Color = Color3.fromRGB(255, 255, 0)
-                                end
-                            else
-                                obj.Frame.Visible = false
-                            end
-                        end
-                    else
-                        RemoveESP(p)
-                    end
-                end
+    
+    -- Update hitbox expander
+    if Config.HitboxExpand and CurrentBall and CurrentBall.Parent then
+        if not ExpanderPart or not ExpanderPart.Parent then
+            CreateExpander(CurrentBall)
+        end
+        -- Update size live
+        if ExpanderPart then
+            local targetSize = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
+            if ExpanderPart.Size ~= targetSize then
+                ExpanderPart.Size = targetSize
             end
-        else
-            RemoveESP(p)
+            ExpanderPart.Transparency = Config.HitboxTransparency
+        end
+    elseif not Config.HitboxExpand and ExpanderPart then
+        ExpanderPart:Destroy()
+        ExpanderPart = nil
+    end
+    
+    -- Status update
+    if ExpanderPart and CurrentBall then
+        Status.Text = "Hitbox: " .. Config.HitboxSize .. " studs"
+    end
+end)
+ 
+-- ═══ REJOIN DETECTION ═══
+-- If ball disappears (round ended), clear and search again
+workspace.DescendantRemoving:Connect(function(v)
+    if v == CurrentBall then
+        CurrentBall = nil
+        if ExpanderPart then
+            ExpanderPart:Destroy()
+            ExpanderPart = nil
         end
     end
 end)
  
-print("[Maskkun] v1.3 loaded")
+print("[Volleyball Helper] Loaded!")
