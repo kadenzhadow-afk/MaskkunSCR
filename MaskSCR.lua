@@ -1,4 +1,4 @@
--- AimAssist + ESP v1.1
+-- AimAssist + ESP v1.2 — Fixed team check & ESP
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -13,11 +13,20 @@ local Config = {
     WallCheck = true,
     TargetPart = "Head",
     ESP = true,
-    ESPColor = Color3.fromRGB(255, 50, 50),
 }
  
 local CurrentTarget = nil
 local ESPObjects = {}
+ 
+-- ═══ TEAM CHECK ═══
+local function IsEnemy(player)
+    -- If no team system, everyone is an enemy
+    if not LocalPlayer.Team or not player.Team then
+        return player ~= LocalPlayer
+    end
+    -- Different teams = enemy
+    return player.Team ~= LocalPlayer.Team
+end
  
 -- ═══ UI ═══
 local SG = Instance.new("ScreenGui")
@@ -58,7 +67,6 @@ local layout = Instance.new("UIListLayout", Content)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Padding = UDim.new(0, 8)
  
--- Slider helper
 local function MakeSlider(name, label, min, max, default, order)
     local Row = Instance.new("Frame")
     Row.Size = UDim2.new(1, 0, 0, 38)
@@ -125,8 +133,7 @@ local function MakeSlider(name, label, min, max, default, order)
             dragging = true
             local v = Update(i.Position.X)
             if name == "FOV" then Config.FOVRadius = v
-            elseif name == "Smooth" then Config.Smoothness = v
-            end
+            elseif name == "Smooth" then Config.Smoothness = v end
         end
     end)
     Knob.InputBegan:Connect(function(i)
@@ -136,8 +143,7 @@ local function MakeSlider(name, label, min, max, default, order)
         if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
             local v = Update(i.Position.X)
             if name == "FOV" then Config.FOVRadius = v
-            elseif name == "Smooth" then Config.Smoothness = v
-            end
+            elseif name == "Smooth" then Config.Smoothness = v end
         end
     end)
     UserInputService.InputEnded:Connect(function(i)
@@ -148,7 +154,6 @@ end
 MakeSlider("FOV", "FOV Radius", 50, 400, Config.FOVRadius, 1)
 MakeSlider("Smooth", "Smoothness", 0.01, 1.0, Config.Smoothness, 2)
  
--- Toggle buttons
 local function MakeToggle(label, configKey, order)
     local Btn = Instance.new("TextButton")
     Btn.Size = UDim2.new(1, 0, 0, 30)
@@ -167,7 +172,6 @@ local function MakeToggle(label, configKey, order)
         Btn.BackgroundColor3 = Config[configKey] and Color3.fromRGB(40, 140, 80) or Color3.fromRGB(60, 60, 80)
         Btn.Text = (Config[configKey] and "ON" or "OFF") .. "  " .. label
     end)
-    return Btn
 end
  
 MakeToggle("Aim Assist", "Enabled", 3)
@@ -199,52 +203,72 @@ end
 local function CreateESP(player)
     if ESPObjects[player] then return end
  
-    local box = Instance.new("Frame")
-    box.Size = UDim2.new(0, 60, 0, 80)
-    box.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-    box.BackgroundTransparency = 0.6
-    box.BorderSizePixel = 0
-    box.AnchorPoint = Vector2.new(0.5, 0.5)
-    box.Parent = SG
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 4)
-    Instance.new("UIStroke", box).Color = Config.ESPColor
+    -- Use BillboardGui instead of Drawing for better compatibility
+    local head = player.Character and player.Character:FindFirstChild("Head")
+    if not head then return end
  
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESP_Billboard"
+    billboard.Size = UDim2.new(0, 120, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    billboard.LightInfluence = 0
+    billboard.Adornee = head
+    billboard.Parent = head
+ 
+    -- Name label
     local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(0, 120, 0, 16)
-    nameLabel.Position = UDim2.new(0.5, 0, 0, -18)
-    nameLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+    nameLabel.Size = UDim2.new(1, 0, 0, 18)
+    nameLabel.Position = UDim2.new(0, 0, 0, 0)
     nameLabel.BackgroundTransparency = 1
     nameLabel.Text = player.Name
-    nameLabel.TextColor3 = Config.ESPColor
-    nameLabel.TextSize = 12
+    nameLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+    nameLabel.TextSize = 14
     nameLabel.Font = Enum.Font.GothamBold
-    nameLabel.TextStrokeTransparency = 0.5
-    nameLabel.Parent = box
+    nameLabel.TextStrokeTransparency = 0
+    nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    nameLabel.Parent = billboard
  
+    -- Distance label
     local distLabel = Instance.new("TextLabel")
     distLabel.Name = "Dist"
-    distLabel.Size = UDim2.new(0, 120, 0, 14)
-    distLabel.Position = UDim2.new(0.5, 0, 1, 4)
-    distLabel.AnchorPoint = Vector2.new(0.5, 0)
+    distLabel.Size = UDim2.new(1, 0, 0, 14)
+    distLabel.Position = UDim2.new(0, 0, 0, 18)
     distLabel.BackgroundTransparency = 1
-    distLabel.Text = ""
-    distLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    distLabel.TextSize = 10
+    distLabel.Text = "0m"
+    distLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    distLabel.TextSize = 12
     distLabel.Font = Enum.Font.Gotham
-    distLabel.TextStrokeTransparency = 0.5
-    distLabel.Parent = box
+    distLabel.TextStrokeTransparency = 0
+    distLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    distLabel.Parent = billboard
  
-    ESPObjects[player] = {Box = box, Name = nameLabel, Dist = distLabel}
+    -- Box frame around character
+    local boxFrame = Instance.new("Frame")
+    boxFrame.Name = "ESP_Box"
+    boxFrame.Size = UDim2.new(0, 60, 0, 80)
+    boxFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    boxFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    boxFrame.BackgroundTransparency = 1
+    boxFrame.BorderSizePixel = 0
+    boxFrame.Parent = billboard
+    Instance.new("UICorner", boxFrame).CornerRadius = UDim.new(0, 4)
+    local boxStroke = Instance.new("UIStroke", boxFrame)
+    boxStroke.Color = Color3.fromRGB(255, 50, 50)
+    boxStroke.Thickness = 2
+    boxStroke.Transparency = 0.3
+ 
+    ESPObjects[player] = {Billboard = billboard, Name = nameLabel, Dist = distLabel, Box = boxFrame, BoxStroke = boxStroke}
 end
  
 local function RemoveESP(player)
     if ESPObjects[player] then
-        ESPObjects[player].Box:Destroy()
+        ESPObjects[player].Billboard:Destroy()
         ESPObjects[player] = nil
     end
 end
  
--- Clean ESP on death/leave
+-- Clean ESP on death
 local function SetupPlayer(player)
     if player == LocalPlayer then return end
  
@@ -276,6 +300,7 @@ local function GetClosest()
  
     for _, p in ipairs(Players:GetPlayers()) do
         if p == LocalPlayer then continue end
+        if not IsEnemy(p) then continue end  -- TEAM CHECK
         if not p.Character then continue end
         local hum = p.Character:FindFirstChildOfClass("Humanoid")
         local root = p.Character:FindFirstChild("HumanoidRootPart")
@@ -356,7 +381,7 @@ RunService.Heartbeat:Connect(function()
     for _, p in ipairs(Players:GetPlayers()) do
         if p == LocalPlayer then continue end
  
-        if Config.ESP and p.Character then
+        if Config.ESP and IsEnemy(p) and p.Character then
             local hum = p.Character:FindFirstChildOfClass("Humanoid")
             local root = p.Character:FindFirstChild("HumanoidRootPart")
             local head = p.Character:FindFirstChild("Head")
@@ -369,18 +394,14 @@ RunService.Heartbeat:Connect(function()
                         CreateESP(p)
                         local obj = ESPObjects[p]
                         if obj then
-                            local sp, onScr = Camera:WorldToViewportPoint(root.Position)
-                            if onScr then
-                                local screenH = math.clamp(1 / sp.Z * 500, 20, 200)
-                                local screenW = screenH * 0.6
-                                obj.Box.Size = UDim2.new(0, screenW, 0, screenH)
-                                obj.Box.Position = UDim2.new(0, sp.X, 0, sp.Y)
-                                obj.Box.AnchorPoint = Vector2.new(0.5, 0.5)
-                                obj.Box.Visible = true
-                                obj.Dist.Text = math.floor(dist) .. "m"
-                                obj.Name.Text = p.Name
+                            obj.Dist.Text = math.floor(dist) .. "m"
+                            -- Color based on distance
+                            if dist < 50 then
+                                obj.BoxStroke.Color = Color3.fromRGB(255, 50, 50)  -- red = close
+                            elseif dist < 150 then
+                                obj.BoxStroke.Color = Color3.fromRGB(255, 165, 0)  -- orange = mid
                             else
-                                obj.Box.Visible = false
+                                obj.BoxStroke.Color = Color3.fromRGB(255, 255, 0)  -- yellow = far
                             end
                         end
                     else
@@ -396,4 +417,4 @@ RunService.Heartbeat:Connect(function()
     end
 end)
  
-print("[Maskkun] Loaded — T to toggle aim, buttons for ESP")
+print("[Maskkun] Loaded v1.2")
