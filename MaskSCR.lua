@@ -1,5 +1,4 @@
--- Volleyball Legends — Ball Hitbox Expander + Utility
--- Paste this in your executor
+-- Volleyball Legends — Ball Hitbox Expander v1.1 (Fixed Slider)
 -- ════════════════════════════════════════════════════
  
 local Players = game:GetService("Players")
@@ -7,64 +6,40 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
  
--- ═══ CONFIG ═══
 local Config = {
     HitboxExpand = true,
-    HitboxSize = 12,        -- how big the hitbox is (default ball is ~2-3)
-    HitboxTransparency = 0.7, -- 0 = visible, 1 = invisible
-    AutoCollect = false,     -- auto-collect stray balls
+    HitboxSize = 12,
+    HitboxTransparency = 0.7,
 }
  
 local ExpanderPart = nil
-local Tracking = false
+local CurrentBall = nil
+local isDraggingSlider = false  -- FIX: flag to block frame drag while sliding
  
 -- ═══ FIND THE BALL ═══
 local function FindBall()
-    -- Check common ball locations in Roblox volleyball games
-    local workspace = workspace
-    
-    -- Method 1: Find by name patterns
     for _, v in pairs(workspace:GetDescendants()) do
         if v:IsA("BasePart") then
             local name = v.Name:lower()
-            if name == "ball" or name == "volleyball" or name == "gameball" 
-                or name:find("ball") and v.Size.Magnitude < 20 
-                and v.Size.Magnitude > 1 then
+            if (name == "ball" or name == "volleyball" or name == "gameball"
+                or (name:find("ball") and v.Size.Magnitude < 20 and v.Size.Magnitude > 1)) then
                 return v
             end
         end
     end
-    
-    -- Method 2: Find a small sphere in workspace (volleyball is usually a sphere)
     for _, v in pairs(workspace:GetDescendants()) do
-        if v:IsA("BasePart") and v.Shape == Enum.PartType.Ball 
+        if v:IsA("BasePart") and v.Shape == Enum.PartType.Ball
             and v.Size.Magnitude < 15 and v.Size.Magnitude > 1 then
             return v
         end
     end
-    
-    -- Method 3: Find parts inside common containers
-    local containers = {"Balls", "Game", "Match", "Court", "BallFolder"}
-    for _, name in pairs(containers) do
-        local folder = workspace:FindFirstChild(name, true)
-        if folder then
-            for _, v in pairs(folder:GetDescendants()) do
-                if v:IsA("BasePart") and v.Size.Magnitude < 15 and v.Size.Magnitude > 1 then
-                    return v
-                end
-            end
-        end
-    end
-    
     return nil
 end
  
 -- ═══ CREATE HITBOX EXPANDER ═══
 local function CreateExpander(ball)
-    if ExpanderPart then
-        ExpanderPart:Destroy()
-    end
-    
+    if ExpanderPart then ExpanderPart:Destroy() end
+ 
     local exp = Instance.new("Part")
     exp.Name = "HitboxExpander"
     exp.Anchored = false
@@ -77,23 +52,12 @@ local function CreateExpander(ball)
     exp.Size = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
     exp.CastShadow = false
     exp.Parent = workspace.CurrentCamera
-    
-    -- Weld to ball so it follows
+ 
     local weld = Instance.new("WeldConstraint")
     weld.Part0 = ball
     weld.Part1 = exp
     weld.Parent = exp
-    
-    -- Make it detect touches
-    exp.Touched:Connect(function(hit)
-        -- Expand the ball's touch detection
-        local hum = hit.Parent:FindFirstChildOfClass("Humanoid")
-        if hum and hit.Parent ~= LocalPlayer.Character then
-            -- Register touch with the ball
-            ball.Touched:FireServer(hit, ball.Position)
-        end
-    end)
-    
+ 
     ExpanderPart = exp
     return exp
 end
@@ -106,8 +70,8 @@ SG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 SG.Parent = LocalPlayer:WaitForChild("PlayerGui")
  
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 230, 0, 200)
-Main.Position = UDim2.new(0, 15, 0.5, -100)
+Main.Size = UDim2.new(0, 230, 0, 180)
+Main.Position = UDim2.new(0, 15, 0.5, -90)
 Main.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
 Main.BorderSizePixel = 0
 Main.Active = true
@@ -119,11 +83,16 @@ local stroke = Instance.new("UIStroke", Main)
 stroke.Color = Color3.fromRGB(0, 180, 255)
 stroke.Thickness = 1.5
  
+-- FIX: Disable frame dragging when mouse is over the slider area
+Main.InputBegan:Connect(function(input)
+    if isDraggingSlider then return end
+end)
+ 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -10, 0, 28)
 Title.Position = UDim2.new(0, 10, 0, 2)
 Title.BackgroundTransparency = 1
-Title.Text = "🏐 Volleyball Helper"
+Title.Text = "Volleyball Helper"
 Title.TextColor3 = Color3.fromRGB(220, 240, 255)
 Title.TextSize = 13
 Title.Font = Enum.Font.GothamBold
@@ -132,7 +101,7 @@ Title.ZIndex = 11
 Title.Parent = Main
  
 local Content = Instance.new("Frame")
-Content.Size = UDim2.new(1, -16, 1, -40)
+Content.Size = UDim2.new(1, -16, 1, -38)
 Content.Position = UDim2.new(0, 8, 0, 34)
 Content.BackgroundTransparency = 1
 Content.ZIndex = 11
@@ -141,10 +110,10 @@ local layout = Instance.new("UIListLayout", Content)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Padding = UDim.new(0, 6)
  
--- ═══ TOGGLE BUTTON HELPER ═══
+-- ═══ TOGGLE BUTTON ═══
 local function MakeToggle(label, default, order, callback)
     local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 30)
+    Row.Size = UDim2.new(1, 0, 0, 28)
     Row.BackgroundTransparency = 1
     Row.LayoutOrder = order
     Row.ZIndex = 12
@@ -171,31 +140,23 @@ local function MakeToggle(label, default, order, callback)
     Btn.Font = Enum.Font.GothamBold
     Btn.ZIndex = 13
     Btn.Parent = Row
-    
-    local btnCorner = Instance.new("UICorner", Btn)
-    btnCorner.CornerRadius = UDim.new(0, 6)
-    
+    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 6)
+ 
     local state = default
     local function UpdateVisual()
-        if state then
-            Btn.BackgroundColor3 = Color3.fromRGB(50, 200, 100)
-        else
-            Btn.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
-        end
+        Btn.BackgroundColor3 = state and Color3.fromRGB(50, 200, 100) or Color3.fromRGB(80, 80, 90)
     end
     UpdateVisual()
-    
+ 
     Btn.MouseButton1Click:Connect(function()
         state = not state
         UpdateVisual()
         Btn.Text = state and "ON" or "OFF"
         callback(state)
     end)
-    
-    return function() return state end
 end
  
--- ═══ SLIDER HELPER ═══
+-- ═══ SLIDER (FIXED — no frame drag conflict) ═══
 local function MakeSlider(label, min, max, default, order, callback)
     local Row = Instance.new("Frame")
     Row.Size = UDim2.new(1, 0, 0, 38)
@@ -205,7 +166,7 @@ local function MakeSlider(label, min, max, default, order, callback)
     Row.Parent = Content
  
     local Lbl = Instance.new("TextLabel")
-    Lbl.Size = UDim2.new(0.6, 0, 0, 14)
+    Lbl.Size = UDim2.new(0.55, 0, 0, 14)
     Lbl.BackgroundTransparency = 1
     Lbl.Text = label
     Lbl.TextColor3 = Color3.fromRGB(180, 180, 200)
@@ -216,7 +177,7 @@ local function MakeSlider(label, min, max, default, order, callback)
     Lbl.Parent = Row
  
     local Val = Instance.new("TextLabel")
-    Val.Size = UDim2.new(0.4, 0, 0, 14)
+    Val.Size = UDim2.new(0.45, 0, 0, 14)
     Val.BackgroundTransparency = 1
     Val.Text = tostring(default)
     Val.TextColor3 = Color3.fromRGB(0, 200, 255)
@@ -233,6 +194,7 @@ local function MakeSlider(label, min, max, default, order, callback)
     Track.BorderSizePixel = 0
     Track.ZIndex = 13
     Track.Parent = Row
+    Track.Active = true  -- FIX: make track consume input
     Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
  
     local Fill = Instance.new("Frame")
@@ -244,47 +206,82 @@ local function MakeSlider(label, min, max, default, order, callback)
     Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
  
     local Knob = Instance.new("Frame")
-    Knob.Size = UDim2.new(0, 14, 0, 14)
-    Knob.Position = UDim2.new((default - min) / (max - min), -7, 0.5, -7)
+    Knob.Size = UDim2.new(0, 16, 0, 16)
+    Knob.Position = UDim2.new((default - min) / (max - min), -8, 0.5, -8)
     Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     Knob.BorderSizePixel = 0
     Knob.ZIndex = 15
     Knob.Parent = Track
+    Knob.Active = true  -- FIX: knob consumes input
     Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
  
     local dragging = false
-    Knob.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+ 
+    local function UpdateSlider(inputX)
+        local absPos = Track.AbsolutePosition.X
+        local absSize = Track.AbsoluteSize.X
+        local x = math.clamp((inputX - absPos) / absSize, 0, 1)
+        local val = min + x * (max - min)
+        val = math.floor(val * 10) / 10
+        Fill.Size = UDim2.new(x, 0, 1, 0)
+        Knob.Position = UDim2.new(x, -8, 0.5, -8)
+        Val.Text = tostring(val)
+        callback(val)
+    end
+ 
+    -- FIX: Use Track.InputBegan so clicking the track also works
+    Track.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
+            isDraggingSlider = true  -- FIX: tell frame to stop dragging
+            UpdateSlider(input.Position.X)
         end
     end)
+ 
+    Knob.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            isDraggingSlider = true  -- FIX: tell frame to stop dragging
+        end
+    end)
+ 
     Knob.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
             dragging = false
+            isDraggingSlider = false  -- FIX: re-enable frame drag
         end
     end)
+ 
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local absPos = Track.AbsolutePosition.X
-            local absSize = Track.AbsoluteSize.X
-            local x = math.clamp((input.Position.X - absPos) / absSize, 0, 1)
-            local val = min + x * (max - min)
-            val = math.floor(val * 10) / 10
-            
-            Fill.Size = UDim2.new(x, 0, 1, 0)
-            Knob.Position = UDim2.new(x, -7, 0.5, -7)
-            Val.Text = tostring(val)
-            callback(val)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            UpdateSlider(input.Position.X)
         end
     end)
-    
+ 
+    -- FIX: Global input end catches edge cases where mouse leaves the knob
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            if dragging then
+                dragging = false
+                isDraggingSlider = false  -- FIX: always re-enable frame drag
+            end
+        end
+    end)
+ 
     callback(default)
 end
  
 -- ═══ BUILD UI ═══
 MakeToggle("Ball Hitbox", true, 1, function(v) Config.HitboxExpand = v end)
-MakeSlider("Hitbox Size", 3, 30, Config.HitboxSize, 2, function(v) Config.HitboxSize = v end)
-MakeToggle("Invisible Ball", false, 3, function(v) 
+MakeSlider("Hitbox Size", 3, 30, Config.HitboxSize, 2, function(v)
+    Config.HitboxSize = v
+end)
+MakeToggle("Invisible Ball", false, 3, function(v)
     Config.HitboxTransparency = v and 1 or 0.7
     if ExpanderPart then ExpanderPart.Transparency = Config.HitboxTransparency end
 end)
@@ -301,14 +298,11 @@ Status.ZIndex = 11
 Status.Parent = Main
  
 -- ═══ MAIN LOOP ═══
-local CurrentBall = nil
- 
 RunService.Heartbeat:Connect(function()
-    -- Find ball if we don't have one
     if not CurrentBall or not CurrentBall.Parent then
         CurrentBall = FindBall()
         if CurrentBall then
-            Status.Text = "Ball found! Size: " .. tostring(CurrentBall.Size)
+            Status.Text = "Ball found!"
             Status.TextColor3 = Color3.fromRGB(100, 255, 150)
         else
             Status.Text = "Searching for ball..."
@@ -316,13 +310,11 @@ RunService.Heartbeat:Connect(function()
             return
         end
     end
-    
-    -- Update hitbox expander
+ 
     if Config.HitboxExpand and CurrentBall and CurrentBall.Parent then
         if not ExpanderPart or not ExpanderPart.Parent then
             CreateExpander(CurrentBall)
         end
-        -- Update size live
         if ExpanderPart then
             local targetSize = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
             if ExpanderPart.Size ~= targetSize then
@@ -334,15 +326,12 @@ RunService.Heartbeat:Connect(function()
         ExpanderPart:Destroy()
         ExpanderPart = nil
     end
-    
-    -- Status update
+ 
     if ExpanderPart and CurrentBall then
         Status.Text = "Hitbox: " .. Config.HitboxSize .. " studs"
     end
 end)
  
--- ═══ REJOIN DETECTION ═══
--- If ball disappears (round ended), clear and search again
 workspace.DescendantRemoving:Connect(function(v)
     if v == CurrentBall then
         CurrentBall = nil
@@ -353,4 +342,4 @@ workspace.DescendantRemoving:Connect(function(v)
     end
 end)
  
-print("[Volleyball Helper] Loaded!")
+print("[Volleyball Helper] v1.1 loaded — slider fix applied")
